@@ -1,0 +1,15 @@
+{
+  "name": "dnartwork-data-research",
+  "version": "1.0.0",
+  "description": "R & D utils for the project of generating the list of SNPs that DNArtwork will use.",
+  "scripts": {},
+  "private": true,
+  "author": "Bernie Sumption <bernie@berniecode.com> (http://berniesumption.com/)",
+  "dependencies": {
+    "async": "^2.0.0",
+    "ts-node": "^0.9.3",
+    "tslint": "^3.13.0",
+    "typescript": "^1.8.10",
+    "underscore": "^1.8.3"
+  }
+}

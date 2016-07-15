@@ -1,0 +1,5 @@
+*.pyo
+.DS_Store
+__tmp*
+node_modules
+*.log
