@@ -2,7 +2,9 @@
   "name": "dnartwork-data-research",
   "version": "1.0.0",
   "description": "R & D utils for the project of generating the list of SNPs that DNArtwork will use.",
-  "scripts": {},
+  "scripts": {
+    "analyse": "tsc -p src && node __tmp_build/find-marker-alleles.js"
+  },
   "private": true,
   "author": "Bernie Sumption <bernie@berniecode.com> (http://berniesumption.com/)",
   "dependencies": {

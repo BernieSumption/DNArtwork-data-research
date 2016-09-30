@@ -7,12 +7,15 @@
  */
 
 const MIN_MARKER_FREQ = 0.02;
+const MAX_MARKER_FREQ = 0.10;
 const IDEAL_MARKER_FREQ = 0.05;
-const MAX_MARKERS_PER_CHROMASOME = 1000;
+const MAX_MARKERS_PER_CHROMASOME = 200;
 const POPULATIONS = ["ASW", "CEU", "CHB", "CHD", "GIH", "JPT", "LWK", "MEX", "MKK", "TSI", "YRI"];
 const CHROMASOMES = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "X"];
+// const POPULATIONS = ["ASW", "CEU"];
+// const CHROMASOMES = ["1", "2"];
 const FREQS_FILE_PATTERN = "./__tmp_hapmap-freqs/allele_freqs_chr{CHR}_{POP}_r28_nr.b36_fwd.txt.gz";
-
+const TESTED_MARKERS_FILE = "tested-markers.txt";
 
 import _ = require("underscore");
 import fs = require("fs");
@@ -23,8 +26,10 @@ let analyser: Promise<any>[] = [];
 
 let CHROMASOME: string;
 let MARKERS: { [slug: string]: Marker };
+let SCRIPT_RESULTS: ChromosomeMarkerList[] = [];
 
 let chrIndex = 0;
+let testedMarkersIds: { [rsId: string]: boolean };
 
 recursiveAnalyseChromasomes()
   .then(() => logNotice("DONE!"));
@@ -32,11 +37,22 @@ recursiveAnalyseChromasomes()
 function recursiveAnalyseChromasomes(): Promise<{}> {
   CHROMASOME = CHROMASOMES[chrIndex++];
   if (CHROMASOME) {
+    logNotice(`Loading tested markers`);
+    loadTestedMarkers();
     logNotice(`Starting analysis of chromasome ${CHROMASOME}`);
     MARKERS = {};
     return chromasomeAnalyser(CHROMASOME)
-      .then(printResults)
+      .then(collectChromasomeResults)
       .then(recursiveAnalyseChromasomes);
+  } else {
+    printResults();
+  }
+}
+
+function loadTestedMarkers() {
+  testedMarkersIds = {};
+  for (let rsid of fs.readFileSync(TESTED_MARKERS_FILE, "utf8").split("\n")) {
+    testedMarkersIds[rsid.trim()] = true;
   }
 }
 
@@ -59,8 +75,11 @@ function populationChromasomeAnalyser(population: string, chromasome: string) {
           firstLine = false;
         } else {
           let cells = line.split(" ");
-          processMarker(cells[HapmapFields.RSID], cells[HapmapFields.REFALLELE], parseFloat(cells[HapmapFields.REFALLELE_FREQ]));
-          processMarker(cells[HapmapFields.RSID], cells[HapmapFields.OTHERALLELE], parseFloat(cells[HapmapFields.OTHERALLELE_FREQ]));
+          // logNotice("rsid = " + cells[HapmapFields.RSID] + " tested = " + testedMarkersIds[cells[HapmapFields.RSID]]);
+          if (testedMarkersIds[cells[HapmapFields.RSID]]) {
+            processMarker(cells[HapmapFields.RSID], cells[HapmapFields.REFALLELE], parseFloat(cells[HapmapFields.REFALLELE_FREQ]), chromasome);
+            processMarker(cells[HapmapFields.RSID], cells[HapmapFields.OTHERALLELE], parseFloat(cells[HapmapFields.OTHERALLELE_FREQ]), chromasome);
+          }
         }
       })
       .on("error", reject)
@@ -70,18 +89,27 @@ function populationChromasomeAnalyser(population: string, chromasome: string) {
       });
   });
 
-  function processMarker(rsid: string, allele: string, freq: number) {
+  function processMarker(rsid: string, allele: string, freq: number, chr: string) {
     let slug = `${rsid}/${allele}`;
     let marker = MARKERS[slug];
     if (!marker) {
       marker = MARKERS[slug] = {
         slug: slug,
+        chr: chr,
+        rsid: rsid,
+        allele: allele,
         populations: 0,
+        populationFreqs: [],
         minFreq: 1,
+        avgFreq: 0,
         maxFreq: 0
       };
     }
+    marker.populationFreqs[marker.populations] = freq;
     ++marker.populations;
+    let prop = 1 / marker.populations;
+    marker.avgFreq *= 1 - prop;
+    marker.avgFreq += freq * prop;
     if (marker.minFreq > freq) {
       marker.minFreq = freq;
     }
@@ -91,27 +119,64 @@ function populationChromasomeAnalyser(population: string, chromasome: string) {
   }
 }
 
-function printResults() {
+function collectChromasomeResults() {
   let populationCount = POPULATIONS.length;
   let acceptableMarkers: Marker[] = [];
   for (let slug in MARKERS) {
     let marker = MARKERS[slug];
-    if (marker.minFreq > MIN_MARKER_FREQ && marker.populations === populationCount) {
+    if (marker.minFreq > MIN_MARKER_FREQ /*&& marker.maxFreq < MAX_MARKER_FREQ*/ && marker.populations === populationCount) {
       acceptableMarkers.push(marker);
     }
   }
-  acceptableMarkers = _.sortBy(acceptableMarkers, m => Math.abs(IDEAL_MARKER_FREQ - m.maxFreq) + Math.abs(IDEAL_MARKER_FREQ - m.minFreq));
+  acceptableMarkers = _.sortBy(acceptableMarkers, m => m.maxFreq);
+  let originalCount = acceptableMarkers.length;
   acceptableMarkers.splice(MAX_MARKERS_PER_CHROMASOME);
-  logNotice(`chr${CHROMASOME} has ${acceptableMarkers.length} markers minFreq=${acceptableMarkers[0].minFreq} maxFreq=${acceptableMarkers[acceptableMarkers.length - 1].maxFreq}`);
-  for (let marker of acceptableMarkers) {
-    console.log(marker.slug);
+
+  if (process.argv[1] === "analyse") {
+    logNotice(`chr${CHROMASOME} has ${originalCount} markers, trimming to ${MAX_MARKERS_PER_CHROMASOME}, minFreq=${_.min(acceptableMarkers, m => m.minFreq).minFreq} maxFreq=${_.max(acceptableMarkers, m => m.maxFreq).maxFreq}`);
+    for (let marker of acceptableMarkers) {
+      console.log(`${marker.slug}\t${CHROMASOME}\t${marker.avgFreq}\t${marker.minFreq}\t${marker.maxFreq}\t${marker.populationFreqs.join("\t")}`);
+    }
   }
+  else {
+    let markers: { [rsId: string]: string } = {};
+    for (let marker of acceptableMarkers) {
+      markers[marker.rsid] = marker.allele;
+    }
+    SCRIPT_RESULTS.push({
+      chr: CHROMASOME,
+      markers: markers
+    });
+  }
+}
+
+function printResults() {
+  if (SCRIPT_RESULTS.length) {
+    console.log(JSON.stringify(SCRIPT_RESULTS, null, "\t"));
+  }
+}
+
+export interface ChromosomeMarkerList {
+  /**
+   * Chromosome name: "1" to "22" or "X"
+   */
+  chr: string;
+
+  /**
+   * Map of SNP rsId to allele, e.g. {"rs123": "A"}
+   */
+  markers: { [rsId: string]: string };
 }
 
 interface Marker {
   slug: string;
+  chr: string;
+  rsid: string;
+  allele: string;
   populations: number;
+  populationFreqs: number[];
   minFreq: number;
+  avgFreq: number;
   maxFreq: number;
 }
 
