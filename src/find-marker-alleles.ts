@@ -13,9 +13,9 @@ const MAX_MARKERS_PER_CHROMASOME = 200;
 const POPULATIONS = ["ASW", "CEU", "CHB", "CHD", "GIH", "JPT", "LWK", "MEX", "MKK", "TSI", "YRI"];
 const CHROMASOMES = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "X"];
 // const POPULATIONS = ["ASW", "CEU"];
-// const CHROMASOMES = ["1", "2"];
+// const CHROMASOMES = ["3"];
 const FREQS_FILE_PATTERN = "./__tmp_hapmap-freqs/allele_freqs_chr{CHR}_{POP}_r28_nr.b36_fwd.txt.gz";
-const TESTED_MARKERS_FILE = "tested-markers.txt";
+const TESTED_MARKERS_FILE = "./marker-list/markers-list-intersection.txt";
 
 import _ = require("underscore");
 import fs = require("fs");
@@ -132,15 +132,17 @@ function collectChromasomeResults() {
   let originalCount = acceptableMarkers.length;
   acceptableMarkers.splice(MAX_MARKERS_PER_CHROMASOME);
 
-  if (process.argv[1] === "analyse") {
+  let markersToDisplay = process.argv.indexOf("--all") !== -1 ? _.values(MARKERS) : acceptableMarkers;
+
+  if (process.argv.indexOf("--table") !== -1) {
     logNotice(`chr${CHROMASOME} has ${originalCount} markers, trimming to ${MAX_MARKERS_PER_CHROMASOME}, minFreq=${_.min(acceptableMarkers, m => m.minFreq).minFreq} maxFreq=${_.max(acceptableMarkers, m => m.maxFreq).maxFreq}`);
-    for (let marker of acceptableMarkers) {
+    for (let marker of markersToDisplay) {
       console.log(`${marker.slug}\t${CHROMASOME}\t${marker.avgFreq}\t${marker.minFreq}\t${marker.maxFreq}\t${marker.populationFreqs.join("\t")}`);
     }
   }
   else {
     let markers: { [rsId: string]: string } = {};
-    for (let marker of acceptableMarkers) {
+    for (let marker of markersToDisplay) {
       markers[marker.rsid] = marker.allele;
     }
     SCRIPT_RESULTS.push({
