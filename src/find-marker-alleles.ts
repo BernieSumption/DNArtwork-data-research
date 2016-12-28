@@ -25,7 +25,7 @@ let analyser: Promise<any>[] = [];
 
 let CHROMASOME: string;
 let MARKERS: { [slug: string]: Marker };
-let SCRIPT_RESULTS: ChromosomeMarkerList[] = [];
+let SCRIPT_RESULTS: ChrSpec[] = [];
 
 let chrIndex = 0;
 let testedMarkersIds: { [rsId: string]: boolean };
@@ -44,7 +44,7 @@ function recursiveAnalyseChromasomes(): Promise<{}> {
       .then(collectChromasomeResults)
       .then(recursiveAnalyseChromasomes);
   } else {
-    printResults();
+    finishAndPrint();
   }
 }
 
@@ -146,7 +146,7 @@ function collectChromasomeResults() {
       logNotice(`${marker.slug}\t${CHROMASOME}\t${Math.round(marker.avgFreq * 1000) / 1000}\t${marker.minFreq}\t${marker.maxFreq}\t${marker.populationFreqs.join("\t")}`);
     }
   }
-  
+
   if (process.argv.indexOf("--probs") !== -1) {
     let failProbability = 1;
     for (let marker of markersToDisplay) {
@@ -156,9 +156,9 @@ function collectChromasomeResults() {
   }
 
   if (process.argv.indexOf("--nojson") === -1) {
-    let markers: { [rsId: string]: string } = {};
+    let markers: [string, string, number][] = [];
     for (let marker of markersToDisplay) {
-      markers[marker.rsid] = marker.allele;
+      markers.push([marker.rsid, marker.allele, 0]);
     }
     SCRIPT_RESULTS.push({
       chr: CHROMASOME,
@@ -167,22 +167,36 @@ function collectChromasomeResults() {
   }
 }
 
-function printResults() {
+function finishAndPrint() {
+  let MersenneTwister = require("mersenne-twister");
+  let generator = new MersenneTwister(1);
+
+  let alleleIds = _.chain(_.range(CHROMASOMES.length * MARKERS_PER_CHROMASOME))
+    .map(n => [n, generator.random()] as number[])
+    .sortBy(n => n[1])
+    .map(n => n[0])
+    .value();
+
+  let i = 0;
+  for (let r of SCRIPT_RESULTS) {
+    for (let m of r.markers) {
+      m[2] = alleleIds[i++];
+    }
+  }
+  if (i !== alleleIds.length) {
+    throw new Error(`Expected ${alleleIds.length} markers but only generated ${i}`);
+  }
   if (SCRIPT_RESULTS.length) {
-    console.log(JSON.stringify(SCRIPT_RESULTS, null, "\t"));
+    console.log(JSON.stringify(SCRIPT_RESULTS, null, "  "));
   }
 }
 
-export interface ChromosomeMarkerList {
-  /**
-   * Chromosome name: "1" to "22" or "X"
-   */
-  chr: string;
 
-  /**
-   * Map of SNP rsId to allele, e.g. {"rs123": "A"}
-   */
-  markers: { [rsId: string]: string };
+export interface ChrSpec {
+  // e.g. "1" or "X"
+  chr: string;
+  // map of rsId to minor allele, e.g. {"rs10916846": "C"}
+  markers: [string, string, number][];
 }
 
 interface Marker {
