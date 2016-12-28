@@ -8,8 +8,7 @@
 
 const MIN_MARKER_FREQ = 0.02;
 const MAX_MARKER_FREQ = 0.10;
-const IDEAL_MARKER_FREQ = 0.05;
-const MAX_MARKERS_PER_CHROMASOME = 200;
+const MARKERS_PER_CHROMASOME = 200;
 const POPULATIONS = ["ASW", "CEU", "CHB", "CHD", "GIH", "JPT", "LWK", "MEX", "MKK", "TSI", "YRI"];
 const CHROMASOMES = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "X"];
 // const POPULATIONS = ["ASW", "CEU"];
@@ -124,23 +123,39 @@ function collectChromasomeResults() {
   let acceptableMarkers: Marker[] = [];
   for (let slug in MARKERS) {
     let marker = MARKERS[slug];
-    if (marker.minFreq > MIN_MARKER_FREQ /*&& marker.maxFreq < MAX_MARKER_FREQ*/ && marker.populations === populationCount) {
+    if (marker.minFreq > MIN_MARKER_FREQ /*&& marker.maxFreq < MAX_MARKER_FREQ */ && marker.populations === populationCount) {
       acceptableMarkers.push(marker);
     }
   }
+  if (acceptableMarkers.length < MARKERS_PER_CHROMASOME) {
+    throw new Error(`Not enough acceptable markers on chr ${CHROMASOME} (got ${acceptableMarkers.length}, required ${MARKERS_PER_CHROMASOME})`);
+  }
   acceptableMarkers = _.sortBy(acceptableMarkers, m => m.maxFreq);
   let originalCount = acceptableMarkers.length;
-  acceptableMarkers.splice(MAX_MARKERS_PER_CHROMASOME);
 
-  let markersToDisplay = process.argv.indexOf("--all") !== -1 ? _.values(MARKERS) : acceptableMarkers;
+  let markersToDisplay = acceptableMarkers;
+  if (process.argv.indexOf("--all") === -1) {
+    // markersToDisplay = acceptableMarkers.slice(0, MARKERS_PER_CHROMASOME/2).concat(acceptableMarkers.slice(acceptableMarkers.length - MARKERS_PER_CHROMASOME/2));
+    markersToDisplay = acceptableMarkers.slice(0, MARKERS_PER_CHROMASOME);
+  }
 
   if (process.argv.indexOf("--table") !== -1) {
-    logNotice(`chr${CHROMASOME} has ${originalCount} markers, trimming to ${MAX_MARKERS_PER_CHROMASOME}, minFreq=${_.min(acceptableMarkers, m => m.minFreq).minFreq} maxFreq=${_.max(acceptableMarkers, m => m.maxFreq).maxFreq}`);
+    logNotice(`chr${CHROMASOME} has ${originalCount} markers, trimming to ${MARKERS_PER_CHROMASOME}, minFreq=${_.min(acceptableMarkers, m => m.minFreq).minFreq} maxFreq=${_.max(acceptableMarkers, m => m.maxFreq).maxFreq}`);
+    logNotice(`SLUG\tCHROMASOME\tAVG\tMIN\tMAX\tPOPS...`);
     for (let marker of markersToDisplay) {
-      console.log(`${marker.slug}\t${CHROMASOME}\t${marker.avgFreq}\t${marker.minFreq}\t${marker.maxFreq}\t${marker.populationFreqs.join("\t")}`);
+      logNotice(`${marker.slug}\t${CHROMASOME}\t${Math.round(marker.avgFreq * 1000) / 1000}\t${marker.minFreq}\t${marker.maxFreq}\t${marker.populationFreqs.join("\t")}`);
     }
   }
-  else {
+  
+  if (process.argv.indexOf("--probs") !== -1) {
+    let failProbability = 1;
+    for (let marker of markersToDisplay) {
+      failProbability *= 1 - marker.avgFreq;
+    }
+    logNotice(`Chr ${CHROMASOME} match probability ${1 - failProbability}`);
+  }
+
+  if (process.argv.indexOf("--nojson") === -1) {
     let markers: { [rsId: string]: string } = {};
     for (let marker of markersToDisplay) {
       markers[marker.rsid] = marker.allele;
