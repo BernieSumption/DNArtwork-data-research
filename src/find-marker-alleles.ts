@@ -12,7 +12,7 @@ const MARKERS_PER_CHROMASOME = 200;
 const POPULATIONS = ["ASW", "CEU", "CHB", "CHD", "GIH", "JPT", "LWK", "MEX", "MKK", "TSI", "YRI"];
 const CHROMASOMES = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "X"];
 // const POPULATIONS = ["ASW", "CEU"];
-// const CHROMASOMES = ["3"];
+// const CHROMASOMES = ["3", "X"];
 const FREQS_FILE_PATTERN = "./__tmp_hapmap-freqs/allele_freqs_chr{CHR}_{POP}_r28_nr.b36_fwd.txt.gz";
 const TESTED_MARKERS_FILE = "./marker-list/markers-list-intersection.txt";
 
@@ -171,11 +171,14 @@ function finishAndPrint() {
   let MersenneTwister = require("mersenne-twister");
   let generator = new MersenneTwister(1);
 
-  let alleleIds = _.chain(_.range(CHROMASOMES.length * MARKERS_PER_CHROMASOME))
-    .map(n => [n, generator.random()] as number[])
-    .sortBy(n => n[1])
-    .map(n => n[0])
-    .value();
+  if (CHROMASOMES[CHROMASOMES.length-1] !== "X") {
+    throw new Error("Expected the last chromasome to be X");
+  }
+
+  let autosomalMarkerCount = (CHROMASOMES.length - 1) * MARKERS_PER_CHROMASOME;
+  let autosomalAlleleIds = getShuffledNumbers(0, autosomalMarkerCount);
+  let xAlleleIds = getShuffledNumbers(autosomalMarkerCount, MARKERS_PER_CHROMASOME);
+  let alleleIds = autosomalAlleleIds.concat(xAlleleIds);
 
   let i = 0;
   for (let r of SCRIPT_RESULTS) {
@@ -188,6 +191,14 @@ function finishAndPrint() {
   }
   if (SCRIPT_RESULTS.length) {
     console.log(JSON.stringify(SCRIPT_RESULTS, null, "  "));
+  }
+
+  function getShuffledNumbers(start: number, length: number): number[] {
+    return _.chain(_.range(length))
+      .map(n => [n + start, generator.random()] as number[])
+      .sortBy(n => n[1])
+      .map(n => n[0])
+      .value();
   }
 }
 
